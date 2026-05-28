@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdserver"
+version = "0.1.0"
+description = "A tiny Markdown file server"
+requires-python = ">=3.9"
+dependencies = ["mistletoe", "pygments"]
+
+[project.scripts]
+mdserver = "mdserver:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+mdserver = ["styles.css"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
