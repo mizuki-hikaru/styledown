@@ -7,7 +7,7 @@ name = "mdserver"
 version = "0.1.0"
 description = "A tiny Markdown file server"
 requires-python = ">=3.9"
-dependencies = ["mistletoe", "pygments"]
+dependencies = ["fastapi", "mistletoe", "pygments", "uvicorn"]
 
 [project.scripts]
 mdserver = "mdserver:main"

@@ -6,9 +6,11 @@ import sys
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from socketserver import TCPServer, StreamRequestHandler
-from typing import Optional
 from urllib.parse import unquote, urlparse
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from .code_extensions import CODE_VIEW_SUFFIXES
 from .markdown import markdown
@@ -31,34 +33,20 @@ TEMPLATE = """<!doctype html>
 </html>
 """
 
-
-def response(status, body, content_type="text/html; charset=utf-8"):
-    if isinstance(body, str):
-        body = body.encode("utf-8")
-
-    if content_type and content_type.startswith("text/") and "charset=" not in content_type:
-        content_type = f"{content_type}; charset=utf-8"
-
-    return (
-        f"HTTP/1.1 {status.value} {status.phrase}\r\n"
-        f"Content-Type: {content_type}\r\n"
-        f"Content-Length: {len(body)}\r\n"
-        "Connection: close\r\n"
-        "\r\n"
-    ).encode("ascii") + body
-
-
 @dataclass(frozen=True)
 class ResolvedPath:
     path: Path
     should_render: bool
-
 
 @dataclass(frozen=True)
 class ServerConfig:
     root_dir: Path
     domains: bool
 
+def normalize_media_type(value):
+    if value and value.startswith("text/") and "charset=" not in value:
+        return f"{value}; charset=utf-8"
+    return value
 
 def is_safe_candidate(root_path, candidate):
     try:
@@ -66,7 +54,6 @@ def is_safe_candidate(root_path, candidate):
     except ValueError:
         return False
     return True
-
 
 def safe_path(url_path, root_path, host="."):
     raw_path = unquote(urlparse(url_path).path)
@@ -94,14 +81,11 @@ def safe_path(url_path, root_path, host="."):
 
     return candidate
 
-
 def render_markdown(markdown_path):
     text = markdown_path.read_text(encoding="utf-8")
     rendered = markdown(text)
     title = html.escape(markdown_path.stem.replace("-", " ").replace("_", " ").title())
-    page = TEMPLATE.format(title=title, body=rendered)
-    return page
-
+    return TEMPLATE.format(title=title, body=rendered)
 
 def render_code(code_path):
     text = code_path.read_text(encoding="utf-8", errors="replace")
@@ -110,106 +94,57 @@ def render_code(code_path):
     title = html.escape(code_path.name)
     return TEMPLATE.format(title=title, body=body)
 
+def serve_path(resolved, config):
+    path = resolved.path
+    suffix = path.suffix.lower()
 
-RENDERERS = {".md": render_markdown}
+    if suffix == ".md" and resolved.should_render:
+        return HTMLResponse(render_markdown(path))
 
+    if suffix in CODE_VIEW_SUFFIXES:
+        return HTMLResponse(render_code(path))
 
-class Handler(StreamRequestHandler):
-    config: Optional[ServerConfig] = None
+    content_type, _ = mimetypes.guess_type(path.name)
+    content_type = normalize_media_type(content_type or "application/octet-stream")
+    return FileResponse(path, media_type=content_type)
 
-    def handle(self):
-        config = self.config
-        if config is None:
-            self.wfile.write(response(HTTPStatus.INTERNAL_SERVER_ERROR, "Server misconfigured"))
-            return
+def get_domain_host(request):
+    host_header = request.headers.get("host")
+    if not host_header:
+        raise HTTPException(status_code=400, detail="Host header required")
 
-        first_line = self.rfile.readline(8192).decode("iso-8859-1").strip()
+    host = host_header.split(":", 1)[0].strip().lower()
+    if not host or not HOST_RE.fullmatch(host):
+        raise HTTPException(status_code=400, detail="Invalid host")
 
-        parts = first_line.split()
-        if len(parts) != 3:
-            self.wfile.write(response(HTTPStatus.BAD_REQUEST, "Bad request"))
-            return
+    return host
 
-        method, target, version = parts
+def create_app(config):
+    app = FastAPI()
+    app.state.config = config
 
-        headers = {}
+    @app.get("/styles.css")
+    def styles():
+        style_path = ASSET_DIR / "styles.css"
+        if not style_path.exists() or not style_path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        content_type, _ = mimetypes.guess_type(style_path.name)
+        content_type = normalize_media_type(content_type or "application/octet-stream")
+        return FileResponse(style_path, media_type=content_type)
 
-        while True:
-            line = self.rfile.readline(8192).decode("iso-8859-1")
-
-            if line in ("\r\n", "\n", ""):
-                break
-
-            if ":" not in line:
-                continue
-
-            key, value = line.split(":", 1)
-            headers[key.strip().lower()] = value.strip().lower()
-
-        host_header = headers.get("host")
-        host = None
-        if config.domains:
-            if not host_header:
-                self.wfile.write(response(HTTPStatus.BAD_REQUEST, "Host header required"))
-                return
-
-            host = host_header.split(":", 1)[0].strip().lower()
-            if not host or not HOST_RE.fullmatch(host):
-                self.wfile.write(response(HTTPStatus.BAD_REQUEST, "Invalid host"))
-                return
-
-        if method != "GET":
-            self.wfile.write(response(HTTPStatus.METHOD_NOT_ALLOWED, "Method not allowed"))
-            return
-
-        requested_url_path = urlparse(target).path
-        if requested_url_path == "/styles.css":
-            style_path = ASSET_DIR / "styles.css"
-            if not style_path.exists() or not style_path.is_file():
-                self.wfile.write(response(HTTPStatus.NOT_FOUND, "Not found"))
-                return
-
-            content_type, _ = mimetypes.guess_type(style_path.name)
-            self.wfile.write(
-                response(
-                    HTTPStatus.OK,
-                    style_path.read_bytes(),
-                    content_type or "application/octet-stream",
-                )
-            )
-            return
-
-        result = safe_path(target, config.root_dir, host if config.domains else ".")
-
+    @app.get("/")
+    @app.get("/{path:path}")
+    def route(path, request: Request):
+        config = request.app.state.config
+        host = get_domain_host(request) if config.domains else "."
+        result = safe_path(request.url.path, config.root_dir, host)
         if result is None:
-            self.wfile.write(response(HTTPStatus.FORBIDDEN, "Forbidden"))
-            return
-        path = result.path
-        should_render = result.should_render
+            return PlainTextResponse("Forbidden", status_code=HTTPStatus.FORBIDDEN)
+        if not result.path.exists() or not result.path.is_file():
+            return PlainTextResponse("Not found", status_code=HTTPStatus.NOT_FOUND)
+        return serve_path(result, config)
 
-        if not path.exists() or not path.is_file():
-            self.wfile.write(response(HTTPStatus.NOT_FOUND, "Not found"))
-            return
-
-        suffix = path.suffix.lower()
-        renderer = RENDERERS.get(suffix) if should_render else None
-        if renderer is not None:
-            self.wfile.write(response(HTTPStatus.OK, renderer(path)))
-            return
-
-        if suffix in CODE_VIEW_SUFFIXES:
-            self.wfile.write(response(HTTPStatus.OK, render_code(path)))
-            return
-
-        content_type, _ = mimetypes.guess_type(path.name)
-        self.wfile.write(
-            response(
-                HTTPStatus.OK,
-                path.read_bytes(),
-                content_type or "application/octet-stream",
-            )
-        )
-
+    return app
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="mdserver")
@@ -250,16 +185,8 @@ def main(argv=None):
         return 2
 
     config = ServerConfig(root_dir=root_dir, domains=args.domains)
-    Handler.config = config
-    host, port = args.host, args.port
-
-    with TCPServer((host, port), Handler) as server:
-        if args.domains:
-            print(f"Serving domains from {root_dir} on http://{host}:{port}/")
-        else:
-            print(f"Serving from {root_dir} on http://{host}:{port}/")
-        server.serve_forever()
-
+    app = create_app(config)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 if __name__ == "__main__":
     raise SystemExit(main())
