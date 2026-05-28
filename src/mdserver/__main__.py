@@ -108,7 +108,9 @@ def build_breadcrumb(url_path, include_file=False):
     return f".caption.muted: {text}\n\n"
 
 def render_directory_listing(dir_path, url_path, root_dir):
-    title = "Home" if url_path.rstrip("/") == "" else dir_path.name
+    root_dir = Path(root_dir).resolve()
+    dir_path = Path(dir_path).resolve()
+    title = "Home" if dir_path == root_dir else dir_path.name
     items = []
     for entry in dir_path.iterdir():
         name = entry.name
@@ -118,12 +120,18 @@ def render_directory_listing(dir_path, url_path, root_dir):
 
     base = url_path.rstrip("/")
 
-    lines = [build_breadcrumb(url_path), ".grid:"]
-    for _, name, entry in items:
-        display = name + ("/" if entry.is_dir() else "")
-        href = f"{base}/{quote(name)}" + ("/" if entry.is_dir() else "")
-        label = html.escape(display).replace("\\", "\\\\").replace("]", "\\]")
-        lines.append(f"    .card.compact: [{label}]({href})")
+    lines = [build_breadcrumb(url_path)]
+    if not items:
+        lines.append("No files in this directory.")
+    else:
+        lines.append("| Name |")
+        lines.append("| ---- |")
+        for _, name, entry in items:
+            is_dir = entry.is_dir()
+            display = name + ("/" if is_dir else "")
+            href = f"{base}/{quote(name)}" + ("/" if is_dir else "")
+            label = html.escape(display).replace("\\", "\\\\").replace("]", "\\]").replace("|", "\\|")
+            lines.append(f"| [{label}]({href}) |")
 
     body = markdown("\n".join(lines))
     return TEMPLATE.format(title=html.escape(title), body=body)
