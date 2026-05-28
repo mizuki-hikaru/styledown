@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -48,12 +48,17 @@ def normalize_media_type(value):
         return f"{value}; charset=utf-8"
     return value
 
-def is_safe_candidate(root_path, candidate):
+def is_safe_path(root_path, path):
+    root_path = root_path.resolve()
+    path = path.resolve()
     try:
-        candidate.path.relative_to(root_path)
+        path.relative_to(root_path)
     except ValueError:
         return False
     return True
+
+def is_safe_candidate(root_path, candidate):
+    return is_safe_path(root_path, candidate.path)
 
 def safe_path(url_path, root_path, host="."):
     raw_path = unquote(urlparse(url_path).path)
@@ -81,20 +86,63 @@ def safe_path(url_path, root_path, host="."):
 
     return candidate
 
+def build_breadcrumb(url_path, include_file=False):
+    parts = [p for p in url_path.strip("/").split("/") if p]
+    if parts and parts[-1].lower() in ("index.md", "index.html"):
+        parts = parts[:-1]
+        include_file = False
+
+    crumbs = ["[Home](/)"]
+    current = ""
+
+    for i, part in enumerate(parts):
+        current += "/" + quote(part)
+        is_last = i == len(parts) - 1
+        if is_last and include_file:
+            crumbs.append(html.escape(part))
+        else:
+            label = html.escape(part).replace("\\", "\\\\").replace("]", "\\]")
+            crumbs.append(f"[{label}]({current}/)")
+
+    text = " / ".join(crumbs)
+    return f".caption.muted: {text}\n\n"
+
+def render_directory_listing(dir_path, url_path, root_dir):
+    title = "Home" if url_path.rstrip("/") == "" else dir_path.name
+    items = []
+    for entry in dir_path.iterdir():
+        name = entry.name
+        items.append((not entry.is_dir(), name, entry))
+
+    items.sort(key=lambda t: (t[0], t[1].lower()))
+
+    base = url_path.rstrip("/")
+
+    lines = [build_breadcrumb(url_path), ".grid:"]
+    for _, name, entry in items:
+        display = name + ("/" if entry.is_dir() else "")
+        href = f"{base}/{quote(name)}" + ("/" if entry.is_dir() else "")
+        label = html.escape(display).replace("\\", "\\\\").replace("]", "\\]")
+        lines.append(f"    .card.compact: [{label}]({href})")
+
+    body = markdown("\n".join(lines))
+    return TEMPLATE.format(title=html.escape(title), body=body)
+
 def render_markdown(markdown_path):
     text = markdown_path.read_text(encoding="utf-8")
     rendered = markdown(text)
     title = html.escape(markdown_path.stem.replace("-", " ").replace("_", " ").title())
     return TEMPLATE.format(title=title, body=rendered)
 
-def render_code(code_path):
+def render_code(code_path, url_path):
     text = code_path.read_text(encoding="utf-8", errors="replace")
     indented = "\n".join(f"    {line}" for line in text.splitlines())
-    body = markdown(f"# {code_path.name}\n\n{indented}", filename=code_path.name)
+    breadcrumb = build_breadcrumb(url_path, include_file=True)
+    body = markdown(f"{breadcrumb}\n\n# {code_path.name}\n\n{indented}", filename=code_path.name)
     title = html.escape(code_path.name)
     return TEMPLATE.format(title=title, body=body)
 
-def serve_path(resolved, config):
+def serve_path(resolved, config, url_path):
     path = resolved.path
     suffix = path.suffix.lower()
 
@@ -102,7 +150,7 @@ def serve_path(resolved, config):
         return HTMLResponse(render_markdown(path))
 
     if suffix in CODE_VIEW_SUFFIXES:
-        return HTMLResponse(render_code(path))
+        return HTMLResponse(render_code(path, url_path))
 
     content_type, _ = mimetypes.guess_type(path.name)
     content_type = normalize_media_type(content_type or "application/octet-stream")
@@ -137,12 +185,20 @@ def create_app(config):
     def route(path, request: Request):
         config = request.app.state.config
         host = get_domain_host(request) if config.domains else "."
-        result = safe_path(request.url.path, config.root_dir, host)
+        url_path = request.url.path
+        fs_path = (config.root_dir / Path(host) / Path(url_path.lstrip("/"))).resolve()
+        if is_safe_path(config.root_dir, fs_path) and fs_path.exists() and fs_path.is_dir():
+            index_md = fs_path / "index.md"
+            index_html = fs_path / "index.html"
+            if not index_md.exists() and not index_html.exists():
+                return HTMLResponse(render_directory_listing(fs_path, url_path, config.root_dir))
+
+        result = safe_path(url_path, config.root_dir, host)
         if result is None:
             return PlainTextResponse("Forbidden", status_code=HTTPStatus.FORBIDDEN)
         if not result.path.exists() or not result.path.is_file():
             return PlainTextResponse("Not found", status_code=HTTPStatus.NOT_FOUND)
-        return serve_path(result, config)
+        return serve_path(result, config, url_path)
 
     return app
 
