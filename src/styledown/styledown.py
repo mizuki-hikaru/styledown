@@ -187,6 +187,11 @@ def split_frontmatter(text: str):
 
 def metadata(path: Path) -> dict[str, Any]:
     if path.is_dir():
+        index_md = path / "index.md"
+        if index_md.exists():
+            loaded, _ = split_frontmatter(index_md.read_text(encoding="utf-8"))
+            return loaded if isinstance(loaded, dict) else {}
+
         meta_path = path / ".meta.yaml"
         if not meta_path.exists():
             return {}
