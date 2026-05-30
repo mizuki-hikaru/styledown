@@ -146,13 +146,13 @@ def directory_listing_markdown(dir_path: Path) -> str:
             label_text = title_from_slug(entry.name)
             href = f"{entry.name}/"
             description = metadata(entry).get("description", "")
-        else:
+        elif entry.suffix.lower() == ".html" and entry.with_suffix(".md").exists():
             label_text = title_from_slug(entry.stem)
             href = entry.stem
-            if entry.suffix.lower() == ".html":
-                source_md = entry.with_suffix(".md")
-                if source_md.exists():
-                    description = metadata(source_md).get("description", "")
+            description = metadata(entry.with_suffix(".md")).get("description", "")
+        else:
+            label_text = entry.name
+            href = entry.name
 
         label = escape_markdown_link_text(label_text, for_table=True)
         desc_cell = escape_markdown_link_text(description, for_table=True)
