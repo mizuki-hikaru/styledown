@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 from pathlib import Path
 from typing import Union
 from urllib.parse import quote
@@ -107,8 +108,8 @@ def breadcrumb_markdown(root_dir: Path, page_path: Path) -> str:
         current = current / part
         is_last = i == len(parts) - 1
 
-        is_file_page = page_path.is_file()
-        label_part = Path(part).stem if is_last and is_file_page else part
+        is_md = page_path.is_file() and page_path.suffix == ".md"
+        label_part = Path(part).stem if is_last and is_md else part
         label = escape_markdown_link_text(title_from_slug(label_part))
 
         if is_last:
@@ -133,9 +134,7 @@ def directory_listing_markdown(dir_path: Path) -> str:
         name = entry.name
         if entry.is_dir() and name.lower() in BLACKLISTED_DIRECTORY_NAMES:
             continue
-        if entry.is_file() and name.lower() == "index.html":
-            continue
-        if entry.is_file() and entry.suffix.lower() == ".md":
+        if entry.is_file() and name.lower() == "index.md":
             continue
         if name.startswith("."):
             continue
@@ -153,7 +152,7 @@ def directory_listing_markdown(dir_path: Path) -> str:
 
     entries.sort(
         key=lambda p: title_from_slug(
-            p.name if isinstance(p, MetaEntry) else (p.name if p.is_dir() else p.stem)
+            p.name if isinstance(p, MetaEntry) else (p.stem if p.is_file() and p.suffix == ".md" else p.name)
         )
     )
 
@@ -172,10 +171,10 @@ def directory_listing_markdown(dir_path: Path) -> str:
             label_text = title_from_slug(entry.name)
             href = f"{entry.name}/"
             description = metadata(entry).get("description", "")
-        elif entry.suffix.lower() == ".html" and entry.with_suffix(".md").exists():
+        elif entry.suffix.lower() == ".md":
             label_text = title_from_slug(entry.stem)
             href = entry.stem
-            description = metadata(entry.with_suffix(".md")).get("description", "")
+            description = metadata(entry).get("description", "")
         else:
             label_text = entry.name
             href = entry.name
@@ -195,31 +194,15 @@ def write_html(output_path: Path, title: str, styles: str, body: str) -> None:
         encoding="utf-8",
     )
 
-def purge_html_files(root_dir: Path) -> int:
-    root_dir = root_dir.resolve()
-    count = 0
-    blacklist = {name.lower() for name in BLACKLISTED_DIRECTORY_NAMES}
+def remove_dist_dir(dist_root: Path) -> None:
+    shutil.rmtree(dist_root, ignore_errors=True)
 
-    for current_dir_str, dirnames, filenames in os.walk(root_dir):
-        dirnames[:] = [d for d in dirnames if d.lower() not in blacklist]
-        current_dir = Path(current_dir_str)
-
-        for filename in filenames:
-            if not filename.lower().endswith(".html"):
-                continue
-            try:
-                (current_dir / filename).unlink()
-                count += 1
-            except FileNotFoundError:
-                continue
-
-    return count
-
-def convert_markdown_file(md_path: Path, root_dir: Path, styles: str) -> None:
-    """Convert a single .md file to a .html file next to it."""
+def convert_markdown_file(md_path: Path, root_dir: Path, output_dir: Path, styles: str) -> None:
+    """Convert a single .md file to a .html file in the corresponding location under the output_path directory."""
 
     md_path = md_path.resolve()
     root_dir = root_dir.resolve()
+    output_dir = output_dir.resolve()
 
     if md_path.suffix.lower() != ".md":
         raise ValueError(f"Not a markdown file: {md_path}")
@@ -232,14 +215,16 @@ def convert_markdown_file(md_path: Path, root_dir: Path, styles: str) -> None:
     body = styledown(markdown_text)
     title = title_from_slug(metadata(md_path).get("title") or md_path.stem)
 
-    output_path = md_path.with_suffix(".html")
+    output_path = (output_dir / md_path.relative_to(root_dir)).with_suffix(".html")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     write_html(output_path, title, styles, body)
 
-def ensure_directory_index(dir_path: Path, root_dir: Path, styles: str) -> None:
+def ensure_directory_index(dir_path: Path, root_dir: Path, output_dir: Path, styles: str) -> None:
     """Write index.html as a directory listing if index.md is not present."""
 
     dir_path = dir_path.resolve()
     root_dir = root_dir.resolve()
+    output_dir = output_dir.resolve()
 
     index_md = dir_path / "index.md"
     if index_md.exists():
@@ -249,41 +234,72 @@ def ensure_directory_index(dir_path: Path, root_dir: Path, styles: str) -> None:
     breadcrumb = breadcrumb_markdown(root_dir, dir_path)
     listing = directory_listing_markdown(dir_path)
     body = styledown(breadcrumb + listing)
-    write_html(dir_path / "index.html", title, styles, body)
 
-def convert_tree(root_dir: Path, styles: str) -> int:
+    output_path = output_dir / dir_path.relative_to(root_dir) / "index.html"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_html(output_path, title, styles, body)
+
+def convert_tree(root_dir: Path, output_dir: Path, styles: str) -> int:
     """Convert all markdown files under root_dir, skipping blacklisted directories."""
 
     root_dir = root_dir.resolve()
+    output_dir = output_dir.resolve()
     count = 0
     blacklist = {name.lower() for name in BLACKLISTED_DIRECTORY_NAMES}
 
     for current_dir_str, dirnames, filenames in os.walk(root_dir):
-        dirnames[:] = [d for d in dirnames if d.lower() not in blacklist]
+        dirnames[:] = [d for d in dirnames if d.lower() not in blacklist and not d.startswith(".")]
         current_dir = Path(current_dir_str)
 
-        md_files = sorted(
-            (current_dir / f for f in filenames if f.lower().endswith(".md")),
-            key=lambda p: p.name.lower(),
-        )
-
-        for md_path in md_files:
-            convert_markdown_file(md_path, root_dir, styles)
-            rel = md_path.relative_to(root_dir).as_posix()
-            print(f"[+] Converted {rel}")
+        for d in list(dirnames):
+            src_dir = current_dir / d
+            if not src_dir.is_symlink():
+                continue
+            dst_dir = output_dir / current_dir.relative_to(root_dir) / d
+            dst_dir.parent.mkdir(parents=True, exist_ok=True)
+            dst_dir.symlink_to(os.readlink(src_dir), target_is_directory=True)
+            print(f"[+] Copied {dst_dir.relative_to(output_dir).as_posix()}")
             count += 1
+            dirnames.remove(d)
 
-        ensure_directory_index(current_dir, root_dir, styles)
+        files = [current_dir / f for f in filenames]
+
+        for path in files:
+            if path.name.startswith("."):
+                continue
+            if path.suffix == ".md":
+                convert_markdown_file(path, root_dir, output_dir, styles)
+                rel = path.relative_to(root_dir).as_posix()
+                print(f"[+] Converted {rel}")
+                count += 1
+            else:
+                rel = path.relative_to(root_dir)
+                dst_path = output_dir / rel
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                if path.is_symlink():
+                    dst_path.symlink_to(os.readlink(path), target_is_directory=False)
+                    print(f"[+] Copied {rel.as_posix()}")
+                    count += 1
+                else:
+                    shutil.copy2(path, dst_path)
+                    print(f"[+] Copied {rel.as_posix()}")
+                    count += 1
+
+        ensure_directory_index(current_dir, root_dir, output_dir, styles)
 
     return count
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="styledown")
     parser.add_argument(
-        "path",
-        nargs="?",
-        default=".",
-        help="Markdown file or directory to convert (default: .).",
+        "--src",
+        default="./src/",
+        help="Markdown file or directory to convert (default: ./src/).",
+    )
+    parser.add_argument(
+        "--out",
+        default="./dist/",
+        help="Directory to place the converted files (default: ./dist/).",
     )
     parser.add_argument(
         "--host",
@@ -303,34 +319,33 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    target = Path(args.path)
+    target = Path(args.src)
     if not target.exists():
         raise FileNotFoundError(target)
 
-    purge_root = target if target.is_dir() else target.parent
-    print("[+] Purging .html files")
-    count = purge_html_files(purge_root)
-    print(f"[+] Purged {count} files")
+    dist_root = Path(args.out).resolve()
+    print(f"[+] Removing {args.out}")
+    remove_dist_dir(dist_root)
+    dist_root.mkdir(parents=True, exist_ok=True)
 
     styles = load_styles()
     root_dir: Path
 
     if target.is_dir():
-        count = convert_tree(target, styles)
+        count = convert_tree(target, dist_root, styles)
         print(f"[+] Converted {count} files")
-        root_dir = target
-        run_server(root_dir, host=args.host, port=args.port, domains=args.domains)
+        run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
         return 0
 
     if target.suffix.lower() != ".md":
         raise ValueError(f"File must end with .md: {target}")
 
     root_dir = target.parent
-    convert_markdown_file(target, root_dir, styles)
+    convert_markdown_file(target, root_dir, dist_root, styles)
     print(f"[+] Converted {target.name}")
-    ensure_directory_index(root_dir, root_dir, styles)
+    ensure_directory_index(root_dir, root_dir, dist_root, styles)
     print("[+] Converted 1 files")
-    run_server(root_dir, host=args.host, port=args.port, domains=args.domains)
+    run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
     return 0
 
 if __name__ == "__main__":
