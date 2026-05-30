@@ -352,23 +352,14 @@ def main(argv=None) -> int:
     styles = load_styles()
     root_dir: Path
 
-    if target.is_dir():
-        if args.domains:
-            count = convert_domains_tree(target, dist_root, styles)
-        else:
-            count = convert_tree(target, dist_root, styles)
-        print(f"[+] Converted {count} files")
-        run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
-        return 0
+    if not target.is_dir():
+        raise ValueError(f"Path must be a directory: {target}")
 
-    if target.suffix.lower() != ".md":
-        raise ValueError(f"File must end with .md: {target}")
-
-    root_dir = target.parent
-    convert_markdown_file(target, root_dir, dist_root, styles)
-    print(f"[+] Converted {target.name}")
-    ensure_directory_index(root_dir, root_dir, dist_root, styles)
-    print("[+] Converted 1 files")
+    if args.domains:
+        count = convert_domains_tree(target, dist_root, styles)
+    else:
+        count = convert_tree(target, dist_root, styles)
+    print(f"[+] Converted {count} files")
     run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
     return 0
 
