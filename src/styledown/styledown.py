@@ -176,6 +176,6 @@ class PygmentsHtmlRenderer(mistletoe.HtmlRenderer):
         return highlight(code, lexer, self.formatter)
 
 
-def markdown(text: str, filename: Optional[str] = None) -> str:
+def styledown(text: str, filename: Optional[str] = None) -> str:
     text = preprocess_div_blocks(text)
     return mistletoe.markdown(text, renderer=lambda: PygmentsHtmlRenderer(filename=filename))

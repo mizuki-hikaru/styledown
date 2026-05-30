@@ -1,15 +1,10 @@
 .hero.center.shadow:
-    # mdserver Presentation Demo
+    # Styledown Presentation Demo
 
     Markdown with composable presentation classes.
 
 .caption.center:
     A tiny syntax extension that feels halfway between markdown and a UI system.
-
-.buttons.blue.center:
-    [Example Button A](#example-a)
-    [Example Button B](#example-b)
-    [View the markdown](/index.md)
 
 .note:
     Notes are useful for contextual information and side remarks.
@@ -25,6 +20,10 @@
 
 .quote.large:
     “Readable source code is a feature.”
+
+.buttons.center:
+    [Example Button A](#example-a)
+    [Example Button B](#example-b)
 
 ```
 <html>

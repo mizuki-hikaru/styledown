@@ -3,20 +3,20 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mdserver"
+name = "styledown"
 version = "0.1.0"
-description = "A tiny Markdown file server"
+description = "A tiny Markdown renderer"
 requires-python = ">=3.9"
-dependencies = ["fastapi", "mistletoe", "pygments", "uvicorn"]
+dependencies = ["mistletoe", "pygments", "fastapi", "uvicorn"]
 
 [project.scripts]
-mdserver = "mdserver:main"
+styledown = "styledown:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-mdserver = ["styles.css"]
+styledown = ["styles.css"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

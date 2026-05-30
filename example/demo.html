@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo</title>
+  <style>/* =========================================================
+   Base document
+========================================================= */
+
+:root {
+  --bg: #ffffff;
+  --fg: #222222;
+
+  --border: #e5e7eb;
+  --muted: #64748b;
+
+  --blue: #4f7cff;
+  --green: #16a34a;
+  --orange: #d97706;
+  --red: #dc2626;
+
+  --surface: #fafafa;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.65;
+  max-width: 90ch;
+  margin: 3rem auto;
+  padding: 0 1rem;
+
+  color: var(--fg);
+  background: var(--bg);
+}
+
+h1, h2, h3 {
+  line-height: 1.2;
+}
+
+p,
+ul,
+ol,
+table,
+blockquote {
+  margin: 1rem 0;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: #111827;
+  color: #f9fafb;
+}
+
+code {
+  font-family: ui-monospace, monospace;
+}
+
+/* =========================================================
+   Links
+========================================================= */
+
+a,
+a:visited,
+a:active {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+/* =========================================================
+   Generic blocks
+========================================================= */
+
+.card,
+.note,
+.warning,
+.success,
+.error,
+.quote,
+.hero,
+.stat {
+  margin: 1.25rem 0;
+  border-radius: 0.85rem;
+}
+
+.card,
+.note,
+.warning,
+.success,
+.error,
+.hero,
+.stat {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+}
+
+/* =========================================================
+   Semantic callouts
+========================================================= */
+
+.note {
+  background: #f5f8ff;
+  border-left: 0.35rem solid var(--blue);
+}
+
+.success {
+  background: #effaf2;
+  border-left: 0.35rem solid var(--green);
+}
+
+.warning {
+  background: #fff8eb;
+  border-left: 0.35rem solid var(--orange);
+}
+
+.error {
+  background: #fff1f2;
+  border-left: 0.35rem solid var(--red);
+}
+
+/* =========================================================
+   Layouts
+========================================================= */
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+
+  margin: 1.5rem 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+
+  margin: 1.5rem 0;
+}
+
+/* =========================================================
+   Hero
+========================================================= */
+
+.hero {
+  padding: 2rem;
+  background:
+    linear-gradient(
+      135deg,
+      #f5f7ff,
+      #ffffff
+    );
+
+  border: 1px solid var(--border);
+}
+
+.hero > :first-child {
+  margin-top: 0;
+}
+
+.hero > :last-child {
+  margin-bottom: 0;
+}
+
+/* =========================================================
+   Stats
+========================================================= */
+
+.stat {
+  background: var(--surface-2);
+}
+
+.stat strong {
+  display: block;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+/* =========================================================
+   Quote
+========================================================= */
+
+.quote {
+  padding: 0.5rem 1.25rem;
+
+  border-left: 0.35rem solid #94a3b8;
+
+  background: var(--surface-3);
+  color: #475569;
+  font-size: 1.1rem;
+  font-style: italic;
+}
+
+/* =========================================================
+   Tables
+========================================================= */
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  background: var(--surface-2);
+  font-weight: 650;
+}
+
+/* =========================================================
+   Typography helpers
+========================================================= */
+
+.caption {
+  margin-top: -0.5rem;
+
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.center {
+  text-align: center;
+}
+
+.small {
+  font-size: 0.92rem;
+}
+
+.large {
+  font-size: 1.15rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* =========================================================
+   Colors
+========================================================= */
+
+.red {
+  --theme-color: var(--red);
+}
+
+.green {
+  --theme-color: var(--green);
+}
+
+.blue {
+  --theme-color: var(--blue);
+}
+
+.orange {
+  --theme-color: var(--orange);
+}
+
+/* =========================================================
+   Buttons
+========================================================= */
+
+.buttons {
+  --button-color: var(--theme-color, var(--muted));
+}
+
+.buttons a, .buttons a:visited {
+  display: inline-block;
+  margin: 0.25rem 0.35rem 0.25rem 0;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--button-color);
+  background: var(--surface-2);
+  color: var(--button-color);
+  font-weight: 600;
+}
+
+.buttons a:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.buttons a:active {
+  transform: translateY(1px);
+}
+
+.buttons a:focus-visible {
+  outline: 2px solid var(--button-color);
+  outline-offset: 2px;
+}
+
+/* =========================================================
+   Visual helpers
+========================================================= */
+
+.shadow {
+  box-shadow:
+    0 6px 18px rgba(0,0,0,0.08);
+}
+
+.round {
+  border-radius: 1.5rem;
+}
+
+.borderless {
+  border: none;
+}
+
+.compact {
+  padding: 0.6rem 0.85rem;
+}
+
+/* =========================================================
+   Combinations become very powerful
+========================================================= */
+
+/* Example:
+   .card.shadow.round
+   .note.compact.small
+*/
+</style>
+</head>
+<body>
+<div class="caption muted">
+<p><a href="./">Home</a> / Demo</p>
+</div>
+<div class="hero center shadow">
+<h1>Styledown Presentation Demo</h1>
+<p>Markdown with composable presentation classes.</p>
+</div>
+<div class="caption center">
+<p>A tiny syntax extension that feels halfway between markdown and a UI system.</p>
+</div>
+<hr />
+<div class="note">
+<p>Notes are useful for contextual information and side remarks.</p>
+</div>
+<div class="success shadow">
+<p>Deployment completed successfully and all health checks passed.</p>
+</div>
+<div class="warning large">
+<p>This warning is slightly larger for emphasis.</p>
+</div>
+<div class="error compact">
+<p>Compact error blocks work well for inline failures.</p>
+</div>
+<div class="quote large">
+<p>“Readable source code is a feature.”</p>
+</div>
+<div class="buttons center">
+<p><a href="#example-a">Example Button A</a>
+<a href="#example-b">Example Button B</a></p>
+</div>
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%;"><span></span><span style="color: #008000; font-weight: bold">&lt;html&gt;</span>
+<span style="color: #BBB">    </span><span style="color: #008000; font-weight: bold">&lt;body&gt;</span>
+<span style="color: #BBB">        </span>Hello<span style="color: #BBB"> </span>world.
+<span style="color: #BBB">    </span><span style="color: #008000; font-weight: bold">&lt;/body&gt;</span>
+<span style="color: #008000; font-weight: bold">&lt;/html&gt;</span>
+</pre></div>
+
+<div class="columns">
+<div class="card shadow">
+<h2>Shadow Card</h2>
+<p>Multiple classes can layer behavior cleanly.</p>
+<ul>
+<li><code>.card</code></li>
+<li><code>.shadow</code></li>
+</ul>
+</div>
+<div class="card round">
+<h2>Rounded Card</h2>
+<p>Utility classes can stay very small and composable.</p>
+<ul>
+<li><code>.card</code></li>
+<li><code>.round</code></li>
+</ul>
+</div>
+</div>
+<div class="grid">
+<div class="card shadow round">
+<h3>Combined Styles</h3>
+<p>Cards can combine many presentation helpers.</p>
+</div>
+<div class="note compact small">
+<h3>Compact Note</h3>
+<p>Small informational block.</p>
+</div>
+<div class="success center">
+<h3>Centered Success</h3>
+<p>Nicely aligned status messaging.</p>
+</div>
+<div class="warning shadow large">
+<h3>Emphasized Warning</h3>
+<p>Larger text plus depth.</p>
+</div>
+</div>
+<div class="columns">
+<div class="stat center shadow">
+<p><strong>12</strong></p>
+<p>Pages migrated</p>
+</div>
+<div class="stat center shadow">
+<p><strong>3</strong></p>
+<p>Remaining tasks</p>
+</div>
+<div class="stat center shadow">
+<p><strong>99.95%</strong></p>
+<p>Uptime</p>
+</div>
+</div>
+<div class="card borderless muted">
+<h2>Borderless Card</h2>
+<p>Utility classes can radically alter appearance
+without introducing new semantic block types.</p>
+</div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th align="left">Classes</th>
+<th align="left">Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><code>.shadow</code></td>
+<td align="left">Adds elevation</td>
+</tr>
+<tr>
+<td align="left"><code>.round</code></td>
+<td align="left">Larger border radius</td>
+</tr>
+<tr>
+<td align="left"><code>.compact</code></td>
+<td align="left">Reduced padding</td>
+</tr>
+<tr>
+<td align="left"><code>.center</code></td>
+<td align="left">Centers text</td>
+</tr>
+<tr>
+<td align="left"><code>.small</code></td>
+<td align="left">Smaller typography</td>
+</tr>
+<tr>
+<td align="left"><code>.large</code></td>
+<td align="left">Larger typography</td>
+</tr>
+<tr>
+<td align="left"><code>.muted</code></td>
+<td align="left">Softer text color</td>
+</tr>
+<tr>
+<td align="left"><code>.borderless</code></td>
+<td align="left">Removes borders</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="columns">
+<div class="card shadow">
+<h3>Nested Blocks</h3>
+<div class="note compact">
+<p>Nested compositions work naturally.</p>
+</div>
+<div class="success compact small">
+<p>Tiny success callout.</p>
+</div>
+</div>
+<div class="card round">
+<h3>Presentation as Composition</h3>
+<p>Instead of inventing dozens of special components,
+a few semantic blocks plus utility classes scale elegantly.</p>
+</div>
+</div>
+<div class="quote center large">
+<p>“Small primitives compose better than giant frameworks.”</p>
+</div>
+<div class="hero center shadow round">
+<h1>Final Thoughts</h1>
+<p>Multiple class support transforms the system from
+a styled markdown renderer into a lightweight document UI framework.</p>
+</div>
+
+</body>
+</html>
