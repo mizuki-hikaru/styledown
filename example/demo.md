@@ -1,3 +1,7 @@
+---
+description: Styledown Presentation Demo
+---
+
 .hero.center.shadow:
     # Styledown Presentation Demo
 

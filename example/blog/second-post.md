@@ -1,3 +1,7 @@
+---
+description: A second entry so the blog listing shows multiple items.
+---
+
 # Second Post
 
 Nothing fancy here. This file exists so the blog directory listing has more than one entry.

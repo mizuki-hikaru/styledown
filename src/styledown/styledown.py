@@ -1,7 +1,9 @@
 import re
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 import mistletoe
+import yaml
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer, guess_lexer_for_filename
@@ -175,7 +177,29 @@ class PygmentsHtmlRenderer(mistletoe.HtmlRenderer):
 
         return highlight(code, lexer, self.formatter)
 
+def split_frontmatter(text: str):
+    if not text.startswith("---\n"):
+        return {}, text
+    _, rest = text.split("---\n", 1)
+    frontmatter, markdown = rest.split("\n---\n", 1)
+    return yaml.safe_load(frontmatter), markdown
+
+
+def metadata(path: Path) -> dict[str, Any]:
+    if path.is_dir():
+        meta_path = path / ".meta.yaml"
+        if not meta_path.exists():
+            return {}
+        loaded = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    if path.is_file() and path.suffix.lower() == ".md":
+        loaded, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+
+    return {}
 
 def styledown(text: str, filename: Optional[str] = None) -> str:
+    _, text = split_frontmatter(text)
     text = preprocess_div_blocks(text)
     return mistletoe.markdown(text, renderer=lambda: PygmentsHtmlRenderer(filename=filename))

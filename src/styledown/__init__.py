@@ -1,4 +1,4 @@
-__all__ = ["main", "styledown"]
+__all__ = ["main", "metadata", "styledown"]
 
 from .__main__ import main
-from .styledown import styledown
+from .styledown import metadata, styledown

@@ -7,7 +7,7 @@ name = "styledown"
 version = "0.1.0"
 description = "A tiny Markdown renderer"
 requires-python = ">=3.9"
-dependencies = ["mistletoe", "pygments", "fastapi", "uvicorn"]
+dependencies = ["mistletoe", "pygments", "fastapi", "uvicorn", "pyyaml"]
 
 [project.scripts]
 styledown = "styledown:main"

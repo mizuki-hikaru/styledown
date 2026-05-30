@@ -1,3 +1,7 @@
+---
+description: Overview of the example site layout and what to try.
+---
+
 ## About This Example
 
 This folder is meant to be converted into a small static site.

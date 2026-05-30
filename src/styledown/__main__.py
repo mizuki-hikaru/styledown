@@ -1,11 +1,10 @@
 import argparse
 import os
 from pathlib import Path
-from typing import Optional
 from urllib.parse import quote
 
 from .server import run_server
-from .styledown import styledown
+from .styledown import metadata, split_frontmatter, styledown
 
 TEMPLATE = """<!doctype html>
 <html lang="en">
@@ -86,34 +85,36 @@ def relative_href(from_dir: Path, to_path: Path) -> str:
     rel = os.path.relpath(to_path, start=from_dir)
     return escape_href(rel.replace(os.sep, "/"))
 
-def breadcrumb_markdown(root_dir: Path, page_dir: Path, filename: Optional[str] = None) -> str:
+def breadcrumb_markdown(root_dir: Path, page_path: Path) -> str:
     """Build a breadcrumb line in styledown markdown."""
 
     root_dir = root_dir.resolve()
-    page_dir = page_dir.resolve()
-    rel_dir = page_dir.relative_to(root_dir)
+    page_path = page_path.resolve()
+    page_dir = page_path if page_path.is_dir() else page_path.parent
+    rel_path = page_path.relative_to(root_dir)
 
     crumbs = []
-    if page_dir == root_dir and filename is None:
+    if page_path == root_dir:
         crumbs.append("Home")
     else:
         home_href = ensure_dir_href(relative_href(page_dir, root_dir))
         crumbs.append(f"[Home]({home_href})")
 
     current = root_dir
-    parts = [part for part in rel_dir.parts if part and part != "."]
+    parts = [part for part in rel_path.parts if part and part != "."]
     for i, part in enumerate(parts):
         current = current / part
-        label = escape_markdown_link_text(title_from_slug(part))
         is_last = i == len(parts) - 1
-        if filename is None and is_last:
+
+        is_file_page = page_path.is_file()
+        label_part = Path(part).stem if is_last and is_file_page else part
+        label = escape_markdown_link_text(title_from_slug(label_part))
+
+        if is_last:
             crumbs.append(label)
         else:
             href = ensure_dir_href(relative_href(page_dir, current))
             crumbs.append(f"[{label}]({href})")
-
-    if filename:
-        crumbs.append(escape_markdown_link_text(title_from_slug(filename)))
 
     return f".caption.muted: {' / '.join(crumbs)}\n\n"
 
@@ -129,6 +130,8 @@ def directory_listing_markdown(dir_path: Path) -> str:
             continue
         if entry.is_file() and entry.suffix.lower() == ".md":
             continue
+        if name.startswith("."):
+            continue
         entries.append(entry)
 
     entries.sort(key=lambda p: (p.is_file(), p.name.lower()))
@@ -136,17 +139,24 @@ def directory_listing_markdown(dir_path: Path) -> str:
     if not entries:
         return "No files in this directory.\n"
 
-    lines = ["| Name |", "| ---- |"]
+    lines = ["| Name | Description |", "| ---- | ----------- |"]
     for entry in entries:
+        description = ""
         if entry.is_dir():
             label_text = title_from_slug(entry.name)
             href = f"{entry.name}/"
+            description = metadata(entry).get("description", "")
         else:
             label_text = title_from_slug(entry.stem)
             href = entry.stem
+            if entry.suffix.lower() == ".html":
+                source_md = entry.with_suffix(".md")
+                if source_md.exists():
+                    description = metadata(source_md).get("description", "")
 
         label = escape_markdown_link_text(label_text, for_table=True)
-        lines.append(f"| [{label}]({escape_href(href)}) |")
+        desc_cell = escape_markdown_link_text(description, for_table=True)
+        lines.append(f"| [{label}]({escape_href(href)}) | {desc_cell} |")
 
     return "\n".join(lines) + "\n"
 
@@ -167,12 +177,13 @@ def convert_markdown_file(md_path: Path, root_dir: Path, styles: str) -> None:
     if md_path.suffix.lower() != ".md":
         raise ValueError(f"Not a markdown file: {md_path}")
 
-    filename = None if md_path.name.lower() == "index.md" else title_from_slug(md_path.stem)
-    breadcrumb = breadcrumb_markdown(root_dir, md_path.parent, filename)
-    markdown_text = breadcrumb + md_path.read_text(encoding="utf-8")
+    breadcrumb_path = md_path.parent if md_path.name.lower() == "index.md" else md_path
+    breadcrumb = breadcrumb_markdown(root_dir, breadcrumb_path)
+    _, markdown_body = split_frontmatter(md_path.read_text(encoding="utf-8"))
+    markdown_text = breadcrumb + markdown_body
 
     body = styledown(markdown_text)
-    title = title_from_slug(md_path.stem)
+    title = title_from_slug(metadata(md_path).get("title") or md_path.stem)
 
     output_path = md_path.with_suffix(".html")
     write_html(output_path, title, styles, body)
