@@ -41,11 +41,6 @@ BLACKLISTED_DIRECTORY_NAMES = {
     "build",
 }
 
-def title_from_slug(slug: str) -> str:
-    """Compute the HTML page title from a slug."""
-
-    return slug.replace("-", " ").replace("_", " ").title()
-
 def load_styles() -> str:
     """Load the bundled stylesheet contents."""
 
@@ -110,7 +105,7 @@ def breadcrumb_markdown(root_dir: Path, page_path: Path) -> str:
 
         is_md = page_path.is_file() and page_path.suffix == ".md"
         label_part = Path(part).stem if is_last and is_md else part
-        label = escape_markdown_link_text(title_from_slug(label_part))
+        label = escape_markdown_link_text(metadata(current)["title"])
 
         if is_last:
             crumbs.append(label)
@@ -150,34 +145,29 @@ def directory_listing_markdown(dir_path: Path) -> str:
             continue
         entries.append(MetaEntry(label, url, description))
 
-    entries.sort(
-        key=lambda p: title_from_slug(
-            p.name if isinstance(p, MetaEntry) else (p.stem if p.is_file() and p.suffix == ".md" else p.name)
-        )
-    )
+    def get_name(entry):
+        return p.name if isinstance(p, MetaEntry) else metadata(p)["title"]
+
+    entries.sort(key=get_name)
 
     if not entries:
         return "No files in this directory.\n"
 
     lines = ["| Page | Description |", "| ---- | ----------- |"]
     for entry in entries:
-        description = ""
-        href = ""
+        label_text = get_name(entry)
         if isinstance(entry, MetaEntry):
-            label_text = title_from_slug(entry.name)
             href = entry.url
             description = entry.description
         elif entry.is_dir():
-            label_text = title_from_slug(entry.name)
             href = f"{entry.name}/"
             description = metadata(entry).get("description", "")
         elif entry.suffix.lower() == ".md":
-            label_text = title_from_slug(entry.stem)
             href = entry.stem
             description = metadata(entry).get("description", "")
         else:
-            label_text = entry.name
             href = entry.name
+            description = ""
 
         label = escape_markdown_link_text(label_text, for_table=True)
         desc_cell = escape_markdown_link_text(description, for_table=True)
@@ -213,7 +203,7 @@ def convert_markdown_file(md_path: Path, root_dir: Path, output_dir: Path, style
     markdown_text = breadcrumb + markdown_body
 
     body = styledown(markdown_text)
-    title = title_from_slug(metadata(md_path).get("title") or md_path.stem)
+    title = metadata(md_path)["title"]
 
     output_path = (output_dir / md_path.relative_to(root_dir)).with_suffix(".html")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -230,7 +220,7 @@ def ensure_directory_index(dir_path: Path, root_dir: Path, output_dir: Path, sty
     if index_md.exists():
         return
 
-    title = "Home" if dir_path == root_dir else title_from_slug(dir_path.name)
+    title = "Home" if dir_path == root_dir else metadata(dir_path)["title"]
     breadcrumb = breadcrumb_markdown(root_dir, dir_path)
     listing = directory_listing_markdown(dir_path)
     body = styledown(breadcrumb + listing)

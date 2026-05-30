@@ -18,14 +18,11 @@ DIV_RE = re.compile(
     r"^(\s*)((?:\.[A-Za-z_][\w-]*)+):(.*)$"
 )
 
-
 def indent_width(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
-
 def parse_classes(class_expr: str) -> str:
     return class_expr.replace(".", " ").strip()
-
 
 def first_child_indent(
     lines: list[str],
@@ -50,7 +47,6 @@ def first_child_indent(
     raise ValueError(
         f"Line {start}: div block has no content"
     )
-
 
 def preprocess_div_blocks(text: str) -> str:
     lines = text.splitlines()
@@ -145,7 +141,6 @@ def preprocess_div_blocks(text: str) -> str:
 
     return "\n".join(output)
 
-
 class PygmentsHtmlRenderer(mistletoe.HtmlRenderer):
     formatter = HtmlFormatter(noclasses=True)
 
@@ -184,25 +179,41 @@ def split_frontmatter(text: str):
     frontmatter, markdown = rest.split("\n---\n", 1)
     return yaml.safe_load(frontmatter), markdown
 
+def title_from_slug(slug: str) -> str:
+    """Compute the HTML page title from a slug."""
+
+    return slug.replace("-", " ").replace("_", " ").title()
 
 def metadata(path: Path) -> dict[str, Any]:
+    def merge_title(markdown: str, meta: dict) -> Optional[str]:
+        meta = meta if isinstance(meta, dict) else {}
+        if meta.get("title"):
+            return meta
+        for line in markdown.splitlines():
+            match = re.match(r"^# (.*)$", line)
+            if match:
+                meta["title"] = match.group(1).strip()
+                return meta
+        meta["title"] = title_from_slug(path.stem)
+        return meta
+
     if path.is_dir():
         index_md = path / "index.md"
         if index_md.exists():
-            loaded, _ = split_frontmatter(index_md.read_text(encoding="utf-8"))
-            return loaded if isinstance(loaded, dict) else {}
+            loaded, markdown = split_frontmatter(index_md.read_text(encoding="utf-8"))
+            return merge_title(markdown, loaded)
 
         meta_path = path / ".meta.yaml"
         if not meta_path.exists():
             return {}
         loaded = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
-        return loaded if isinstance(loaded, dict) else {}
+        return merge_title("", loaded)
 
     if path.is_file() and path.suffix.lower() == ".md":
-        loaded, _ = split_frontmatter(path.read_text(encoding="utf-8"))
-        return loaded if isinstance(loaded, dict) else {}
+        loaded, markdown = split_frontmatter(path.read_text(encoding="utf-8"))
+        return merge_title(markdown, loaded)
 
-    return {}
+    return {"title": path.name}
 
 def styledown(text: str, filename: Optional[str] = None) -> str:
     _, text = split_frontmatter(text)
