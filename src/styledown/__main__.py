@@ -146,14 +146,16 @@ def directory_listing_markdown(dir_path: Path) -> str:
         entries.append(MetaEntry(label, url, description))
 
     def get_name(entry):
-        return p.name if isinstance(p, MetaEntry) else metadata(p)["title"]
+        if isinstance(entry, MetaEntry):
+            return entry.name
+        return metadata(entry)["title"]
 
     entries.sort(key=get_name)
 
     if not entries:
         return "No files in this directory.\n"
 
-    lines = ["| Page | Description |", "| ---- | ----------- |"]
+    lines = ["| Name | Description |", "| ---- | ----------- |"]
     for entry in entries:
         label_text = get_name(entry)
         if isinstance(entry, MetaEntry):
