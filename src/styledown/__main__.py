@@ -1,6 +1,7 @@
 import argparse
 import os
 from pathlib import Path
+from typing import Union
 from urllib.parse import quote
 
 from .server import run_server
@@ -121,7 +122,13 @@ def breadcrumb_markdown(root_dir: Path, page_path: Path) -> str:
 def directory_listing_markdown(dir_path: Path) -> str:
     """Build a markdown table listing directories and files."""
 
-    entries: list[Path] = []
+    class MetaEntry:
+        def __init__(self, name: str, url: str, description: str):
+            self.name = name
+            self.url = url
+            self.description = description
+
+    entries: list[Union[Path, MetaEntry]] = []
     for entry in dir_path.iterdir():
         name = entry.name
         if entry.is_dir() and name.lower() in BLACKLISTED_DIRECTORY_NAMES:
@@ -134,7 +141,21 @@ def directory_listing_markdown(dir_path: Path) -> str:
             continue
         entries.append(entry)
 
-    entries.sort(key=lambda p: (p.is_file(), p.name.lower()))
+    dir_meta = metadata(dir_path)
+    links = dir_meta.get("links", [])
+    for item in links:
+        label = item.get("label", "").strip()
+        url = item.get("url", "").strip()
+        description = item.get("description", "").strip()
+        if not label or not url:
+            continue
+        entries.append(MetaEntry(label, url, description))
+
+    entries.sort(
+        key=lambda p: title_from_slug(
+            p.name if isinstance(p, MetaEntry) else (p.name if p.is_dir() else p.stem)
+        )
+    )
 
     if not entries:
         return "No files in this directory.\n"
@@ -142,7 +163,12 @@ def directory_listing_markdown(dir_path: Path) -> str:
     lines = ["| Name | Description |", "| ---- | ----------- |"]
     for entry in entries:
         description = ""
-        if entry.is_dir():
+        href = ""
+        if isinstance(entry, MetaEntry):
+            label_text = title_from_slug(entry.name)
+            href = entry.url
+            description = entry.description
+        elif entry.is_dir():
             label_text = title_from_slug(entry.name)
             href = f"{entry.name}/"
             description = metadata(entry).get("description", "")
@@ -156,7 +182,8 @@ def directory_listing_markdown(dir_path: Path) -> str:
 
         label = escape_markdown_link_text(label_text, for_table=True)
         desc_cell = escape_markdown_link_text(description, for_table=True)
-        lines.append(f"| [{label}]({escape_href(href)}) | {desc_cell} |")
+        href_cell = href if isinstance(entry, MetaEntry) else escape_href(href)
+        lines.append(f"| [{label}]({href_cell}) | {desc_cell} |")
 
     return "\n".join(lines) + "\n"
 
@@ -167,6 +194,26 @@ def write_html(output_path: Path, title: str, styles: str, body: str) -> None:
         TEMPLATE.format(title=title, styles=styles, body=body),
         encoding="utf-8",
     )
+
+def purge_html_files(root_dir: Path) -> int:
+    root_dir = root_dir.resolve()
+    count = 0
+    blacklist = {name.lower() for name in BLACKLISTED_DIRECTORY_NAMES}
+
+    for current_dir_str, dirnames, filenames in os.walk(root_dir):
+        dirnames[:] = [d for d in dirnames if d.lower() not in blacklist]
+        current_dir = Path(current_dir_str)
+
+        for filename in filenames:
+            if not filename.lower().endswith(".html"):
+                continue
+            try:
+                (current_dir / filename).unlink()
+                count += 1
+            except FileNotFoundError:
+                continue
+
+    return count
 
 def convert_markdown_file(md_path: Path, root_dir: Path, styles: str) -> None:
     """Convert a single .md file to a .html file next to it."""
@@ -259,6 +306,11 @@ def main(argv=None) -> int:
     target = Path(args.path)
     if not target.exists():
         raise FileNotFoundError(target)
+
+    purge_root = target if target.is_dir() else target.parent
+    print("[+] Purging .html files")
+    count = purge_html_files(purge_root)
+    print(f"[+] Purged {count} files")
 
     styles = load_styles()
     root_dir: Path
