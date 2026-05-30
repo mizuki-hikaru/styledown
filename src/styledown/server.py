@@ -33,7 +33,7 @@ def _sanitize_host(host: str) -> Optional[str]:
 
     match = re.fullmatch(
         r"(?P<name>"
-        r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+        r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
         r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
         r")"
         r"\.?"

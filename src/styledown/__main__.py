@@ -159,7 +159,7 @@ def directory_listing_markdown(dir_path: Path) -> str:
     if not entries:
         return "No files in this directory.\n"
 
-    lines = ["| Name | Description |", "| ---- | ----------- |"]
+    lines = ["| Page | Description |", "| ---- | ----------- |"]
     for entry in entries:
         description = ""
         href = ""
@@ -182,7 +182,7 @@ def directory_listing_markdown(dir_path: Path) -> str:
         label = escape_markdown_link_text(label_text, for_table=True)
         desc_cell = escape_markdown_link_text(description, for_table=True)
         href_cell = href if isinstance(entry, MetaEntry) else escape_href(href)
-        lines.append(f"| [{label}]({href_cell}) | {desc_cell} |")
+        lines.append(f"| <span class='nowrap'>[{label}]({href_cell})</span> | {desc_cell} |")
 
     return "\n".join(lines) + "\n"
 
@@ -355,10 +355,9 @@ def main(argv=None) -> int:
     if target.is_dir():
         if args.domains:
             count = convert_domains_tree(target, dist_root, styles)
-            print(f"[+] Converted {count} files")
         else:
             count = convert_tree(target, dist_root, styles)
-            print(f"[+] Converted {count} files")
+        print(f"[+] Converted {count} files")
         run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
         return 0
 
