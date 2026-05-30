@@ -289,6 +289,27 @@ def convert_tree(root_dir: Path, output_dir: Path, styles: str) -> int:
 
     return count
 
+def convert_domains_tree(root_dir: Path, output_dir: Path, styles: str) -> int:
+    count = 0
+    blacklist = {name.lower() for name in BLACKLISTED_DIRECTORY_NAMES}
+
+    for entry in root_dir.iterdir():
+        if entry.name.startswith("."):
+            continue
+        if entry.name.lower() in blacklist:
+            continue
+        if not entry.is_dir():
+            continue
+
+        out_site_dir = output_dir / entry.name
+        if entry.is_symlink():
+            out_site_dir.symlink_to(os.readlink(entry), target_is_directory=True)
+            continue
+
+        count += convert_tree(entry, out_site_dir, styles)
+
+    return count
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="styledown")
     parser.add_argument(
@@ -332,8 +353,12 @@ def main(argv=None) -> int:
     root_dir: Path
 
     if target.is_dir():
-        count = convert_tree(target, dist_root, styles)
-        print(f"[+] Converted {count} files")
+        if args.domains:
+            count = convert_domains_tree(target, dist_root, styles)
+            print(f"[+] Converted {count} files")
+        else:
+            count = convert_tree(target, dist_root, styles)
+            print(f"[+] Converted {count} files")
         run_server(dist_root, host=args.host, port=args.port, domains=args.domains)
         return 0
 
