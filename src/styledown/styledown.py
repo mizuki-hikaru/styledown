@@ -190,7 +190,7 @@ def metadata(path: Path) -> dict[str, Any]:
         if meta.get("title"):
             return meta
         for line in markdown.splitlines():
-            match = re.match(r"^# (.*)$", line)
+            match = re.match(r"^[^#]*#([^#]*)$", line)
             if match:
                 meta["title"] = match.group(1).strip()
                 return meta
