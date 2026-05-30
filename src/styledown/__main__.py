@@ -249,6 +249,11 @@ def main(argv=None) -> int:
         default=1234,
         help="Port to bind the server to (default: 1234).",
     )
+    parser.add_argument(
+        "--domains",
+        action="store_true",
+        help="Serve multiple sites from subdirectories by mapping the request Host header to a subdirectory.",
+    )
     args = parser.parse_args(argv)
 
     target = Path(args.path)
@@ -262,7 +267,7 @@ def main(argv=None) -> int:
         count = convert_tree(target, styles)
         print(f"[+] Converted {count} files")
         root_dir = target
-        run_server(root_dir, host=args.host, port=args.port)
+        run_server(root_dir, host=args.host, port=args.port, domains=args.domains)
         return 0
 
     if target.suffix.lower() != ".md":
@@ -273,7 +278,7 @@ def main(argv=None) -> int:
     print(f"[+] Converted {target.name}")
     ensure_directory_index(root_dir, root_dir, styles)
     print("[+] Converted 1 files")
-    run_server(root_dir, host=args.host, port=args.port)
+    run_server(root_dir, host=args.host, port=args.port, domains=args.domains)
     return 0
 
 if __name__ == "__main__":
