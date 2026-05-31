@@ -53,6 +53,7 @@ def preprocess_div_blocks(text: str) -> str:
     output = []
 
     stack = []  # [{"base_indent": int, "content_indent": int}]
+    in_fenced_code_block = False
 
     for i, line in enumerate(lines):
         line_number = i + 1
@@ -60,11 +61,20 @@ def preprocess_div_blocks(text: str) -> str:
         raw_indent = indent_width(line)
         stripped = line.lstrip()
 
-        while stack and stripped and raw_indent <= stack[-1]["base_indent"]:
+        while (
+            stack
+            and stripped
+            and raw_indent <= stack[-1]["base_indent"]
+            and not in_fenced_code_block
+        ):
             output.append("")
             output.append("</div>")
             output.append("")
             stack.pop()
+
+        content_indent = stack[-1]["content_indent"] if stack else 0
+        if raw_indent == content_indent and stripped.startswith("```"):
+            in_fenced_code_block = not in_fenced_code_block
 
         # Ensure code blocks render correctly.
         if stripped:
@@ -78,7 +88,7 @@ def preprocess_div_blocks(text: str) -> str:
                     output.append(line)
                     continue
 
-        match = DIV_RE.match(line)
+        match = None if in_fenced_code_block else DIV_RE.match(line)
 
         if match:
             indent_str, class_expr, inline_content = match.groups()
