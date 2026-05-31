@@ -195,7 +195,7 @@ def title_from_slug(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").title()
 
 def metadata(path: Path) -> dict[str, Any]:
-    def merge_title(markdown: str, meta: dict) -> Optional[str]:
+    def merge_title(markdown: str, meta: Any) -> dict:
         meta = meta if isinstance(meta, dict) else {}
         if meta.get("title"):
             return meta
