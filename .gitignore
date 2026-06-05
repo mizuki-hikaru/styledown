@@ -1,5 +1,4 @@
 __pycache__
 env
-*.html
 dist
 *egg-info

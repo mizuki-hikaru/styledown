@@ -1,231 +1,263 @@
+import html
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Iterator, Optional, Protocol
 
-import mistletoe
-import yaml
+from mistletoe import Document
+from mistletoe.block_token import BlockToken, Heading, Paragraph, tokenize
+from mistletoe.html_renderer import HtmlRenderer
+from mistletoe.span_token import tokenize_inner
+
 from pygments import highlight
-from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_lexer_by_name, guess_lexer, guess_lexer_for_filename
-from pygments.lexers.special import TextLexer
+from pygments.formatters import HtmlFormatter
+from pygments.lexer import Lexer
+from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
 from pygments.util import ClassNotFound
 
-# Matches:
-# .card:
-# .card.big:
-# .card.big: inline content
-DIV_RE = re.compile(
-    r"^(\s*)((?:\.[A-Za-z_][\w-]*)+):(.*)$"
-)
+@dataclass(frozen=True)
+class Breadcrumb:
+    href: str
+    title: str
 
-def indent_width(line: str) -> int:
-    return len(line) - len(line.lstrip(" "))
+@dataclass(frozen=True)
+class IndexEntry:
+    href: str
+    title: str
+    description: str
 
-def parse_classes(class_expr: str) -> str:
-    return class_expr.replace(".", " ").strip()
+@dataclass(frozen=True)
+class Metadata:
+    title: str
+    description: str
 
-def first_child_indent(
-    lines: list[str],
-    start: int,
-    base_indent: int,
-) -> int:
-    for i in range(start, len(lines)):
-        line = lines[i]
+class _PeekableLines(Protocol):
+    def __next__(self) -> str: ...
+    def peek(self, n: int = 1) -> Optional[str]: ...
 
-        if not line.strip():
-            continue
+class Div(BlockToken):
+    pattern = re.compile(r"^ {0,3}((?:\.[A-Za-z][A-Za-z0-9_-]*)+):(.*)$")
 
-        indent = indent_width(line)
+    @classmethod
+    def start(cls, line: Optional[str]) -> bool:
+        if line is None:
+            return False
+        return cls.pattern.match(line) is not None
 
-        if indent <= base_indent:
-            raise ValueError(
-                f"Line {i + 1}: div block has no indented content"
+    @classmethod
+    def check_interrupts_paragraph(cls, lines: _PeekableLines) -> bool:
+        return cls.start(lines.peek())
+
+    @classmethod
+    def read(cls, lines: _PeekableLines) -> tuple[str, list[str]]:
+        first = next(lines)
+        match = cls.pattern.match(first)
+
+        class_name = " ".join(match.group(1).split(".")).strip()
+        rest = match.group(2).strip()
+
+        if rest:
+            return class_name, [rest + "\n"]
+
+        child_lines = []
+
+        while lines.peek() is not None:
+            line = lines.peek()
+
+            if line.strip() == "":
+                child_lines.append(next(lines))
+                continue
+
+            if line.startswith("    "):
+                child_lines.append(next(lines)[4:])
+                continue
+
+            if line.startswith("\t"):
+                child_lines.append(next(lines)[1:])
+                continue
+
+            break
+
+        return class_name, child_lines
+
+    def __init__(self, match: tuple[str, list[str]]) -> None:
+        self.class_name, child_lines = match
+        self.children = tokenize(child_lines)
+
+class Index(BlockToken):
+    pattern = re.compile(r"^ {0,3}:index:\s*$")
+
+    @classmethod
+    def start(cls, line: Optional[str]) -> bool:
+        if line is None:
+            return False
+        return cls.pattern.match(line) is not None
+
+    @classmethod
+    def check_interrupts_paragraph(cls, lines: _PeekableLines) -> bool:
+        return cls.start(lines.peek())
+
+    @classmethod
+    def read(cls, lines: _PeekableLines) -> tuple[()]:
+        try:
+            next(lines)
+        except StopIteration:
+            return ()
+        return ()
+
+    def __init__(self, match: tuple[()]) -> None:
+        self.children = []
+
+class StyledownRenderer(HtmlRenderer):
+    def __init__(self, index_entries: Iterable[IndexEntry] = ()) -> None:
+        super().__init__(Div, Index)
+        self.index_entries = list(index_entries)
+        self.code_formatter = HtmlFormatter(nowrap=False)
+
+    def render_div(self, token: Any) -> str:
+        class_name = html.escape(token.class_name, quote=True)
+        inner = self.render_inner(token)
+        return f'<div class="{class_name}">\n{inner}\n</div>'
+
+    def render_index(self, token: Any) -> str:
+        rows = []
+
+        for entry in self.index_entries:
+            href = html.escape(entry.href, quote=True)
+            title = render_styledown_inline(entry.title)
+            rows.append(
+                "<tr>"
+                f'<td class="nowrap"><a href="{href}">{title}</a></td>'
+                f"<td>{entry.description}</td>"
+                "</tr>"
             )
 
-        return indent
+        rows = "\n".join(rows)
 
-    raise ValueError(
-        f"Line {start}: div block has no content"
-    )
+        return (
+            '<table class="index">\n'
+            "<thead>\n"
+            "<tr><th>Name</th><th>Description</th></tr>\n"
+            "</thead>\n"
+            "<tbody>\n"
+            f"{rows}\n"
+            "</tbody>\n"
+            "</table>"
+        )
 
-def preprocess_div_blocks(text: str) -> str:
-    lines = text.splitlines()
-    output = []
+    def render_block_code(self, token: Any) -> str:
+        code = token.children[0].content if token.children else ""
 
-    stack = []  # [{"base_indent": int, "content_indent": int}]
-    in_fenced_code_block = False
+        language = getattr(token, "language", None)
+        if language:
+            language = language.strip().split()[0]
 
-    for i, line in enumerate(lines):
-        line_number = i + 1
+        lexer = get_pygments_lexer(code, language)
+        return highlight(code, lexer, self.code_formatter)
 
-        raw_indent = indent_width(line)
-        stripped = line.lstrip()
+def get_pygments_lexer(code: str, language: Optional[str]) -> Lexer:
+    if language:
+        try:
+            return get_lexer_by_name(language)
+        except ClassNotFound:
+            pass
 
-        while (
-            stack
-            and stripped
-            and raw_indent <= stack[-1]["base_indent"]
-            and not in_fenced_code_block
-        ):
-            output.append("")
-            output.append("</div>")
-            output.append("")
-            stack.pop()
+    try:
+        return guess_lexer(code)
+    except ClassNotFound:
+        return TextLexer()
 
-        content_indent = stack[-1]["content_indent"] if stack else 0
-        if raw_indent == content_indent and stripped.startswith("```"):
-            in_fenced_code_block = not in_fenced_code_block
+def escape_styledown_link_text(text: str) -> str:
+    if "\n" in text:
+        raise Exception("Newline found in link href or text")
+    return text.replace("\\", "\\\\").replace("]", "\\]").replace(")", "\\)")
 
-        # Ensure code blocks render correctly.
-        if stripped:
-            if stack:
-                current = stack[-1]
-                if raw_indent >= current["content_indent"] + 4:
-                    output.append(line[current["content_indent"]:])
-                    continue
-            else:
-                if raw_indent >= 4:
-                    output.append(line)
-                    continue
+def generate_breadcrumbs_styledown(breadcrumbs: Iterable[Breadcrumb]) -> str:
+    crumbs = list(breadcrumbs)
+    if not crumbs:
+        return ""
 
-        match = None if in_fenced_code_block else DIV_RE.match(line)
+    parts = []
+    for i, crumb in enumerate(crumbs):
+        href = escape_styledown_link_text(crumb.href)
+        title = escape_styledown_link_text(crumb.title)
+        is_last = i == len(crumbs) - 1
+        if is_last:
+            parts.append(f"{title}")
+        else:
+            parts.append(f"[{title}]({href})")
 
-        if match:
-            indent_str, class_expr, inline_content = match.groups()
+    return ".caption.muted: " + " / ".join(parts) + "\n\n"
 
-            base_indent = len(indent_str)
-            classes = parse_classes(class_expr)
-            inline_content = inline_content.lstrip()
+def render_styledown(
+    styledown: str,
+    index_entries: Iterable[IndexEntry] = (),
+    breadcrumbs: Iterable[Breadcrumb] = (),
+) -> str:
+    styledown = generate_breadcrumbs_styledown(breadcrumbs) + styledown
+    with StyledownRenderer(index_entries) as renderer:
+        return renderer.render(Document(styledown.splitlines(True)))
 
-            # Inline form:
-            # .card.big: hello
-            if inline_content:
-                output.append("")
-                output.append(f'<div class="{classes}">')
-                output.append("")
-                output.append(inline_content)
-                output.append("")
-                output.append("</div>")
-                output.append("")
+def render_styledown_inline(styledown: str) -> str:
+    class _Inline:
+        def __init__(self, children: list[Any]) -> None:
+            self.children = children
 
-            # Block form:
-            # .card.big:
-            #     hello
-            else:
-                content_indent = first_child_indent(
-                    lines,
-                    i + 1,
-                    base_indent,
-                )
+    with MetadataRenderer() as renderer:
+        children = tokenize_inner(styledown)
+        return renderer.render_inner(_Inline(children)).strip()
 
-                output.append("")
-                output.append(f'<div class="{classes}">')
-                output.append("")
+def render_styledown_page(
+    styledown: str,
+    index_entries: Iterable[IndexEntry] = (),
+    breadcrumbs: Iterable[Breadcrumb] = (),
+) -> str:
+    body = render_styledown(styledown, index_entries, breadcrumbs)
+    title = extract_metadata(styledown).title
+    template = (Path(__file__).parent / "template.html").read_text(encoding="utf-8")
+    return template.replace("{title}", title).replace("{body}", body)
 
-                stack.append({
-                    "base_indent": base_indent,
-                    "content_indent": content_indent,
-                })
+class MetadataRenderer(StyledownRenderer):
+    def __init__(self) -> None:
+        super().__init__(index_entries=())
 
-            continue
+    def render_inline(self, token: Any) -> str:
+        return self.render_inner(token).strip()
 
-        if stack and stripped:
-            current = stack[-1]
+def walk_tokens(token: Any) -> Iterator[Any]:
+    yield token
 
-            if raw_indent < current["content_indent"]:
-                raise ValueError(
-                    f"Line {line_number}: invalid indentation "
-                    f"(got {raw_indent}, expected >= "
-                    f"{current['content_indent']})"
-                )
+    children = getattr(token, "children", None) or []
+    for child in children:
+        yield from walk_tokens(child)
 
-            line = line[current["content_indent"]:]
+def extract_metadata(styledown: str) -> Metadata:
+    with MetadataRenderer() as renderer:
+        document = Document(styledown.splitlines(True))
 
-        output.append(line)
+        title_token = None
+        description_token = None
 
-    while stack:
-        output.append("")
-        output.append("</div>")
-        output.append("")
-        stack.pop()
+        for token in walk_tokens(document):
+            if title_token is None and isinstance(token, Heading) and token.level == 1:
+                title_token = token
 
-    return "\n".join(output)
+            if description_token is None and isinstance(token, Paragraph):
+                description_token = token
 
-class PygmentsHtmlRenderer(mistletoe.HtmlRenderer):
-    formatter = HtmlFormatter(noclasses=True)
+            if title_token is not None and description_token is not None:
+                break
 
-    def __init__(self, filename=None, *extras, **kwargs):
-        super().__init__(*extras, **kwargs)
-        self._filename = filename
+        title = renderer.render_inline(title_token) if title_token else None
+        description = renderer.render_inline(description_token) if description_token else None
 
-    def render_block_code(self, token):
-        code = token.content
+    if title is None:
+        raise Exception("Title not found")
+    if description is None:
+        raise Exception("Description not found")
 
-        lexer = None
-        if token.language:
-            try:
-                lexer = get_lexer_by_name(token.language)
-            except ClassNotFound:
-                lexer = None
+    return Metadata(title=title, description=description)
 
-        if lexer is None and self._filename:
-            try:
-                lexer = guess_lexer_for_filename(self._filename, code)
-            except ClassNotFound:
-                lexer = None
-
-        if lexer is None:
-            try:
-                lexer = guess_lexer(code)
-            except ClassNotFound:
-                lexer = TextLexer()
-
-        return highlight(code, lexer, self.formatter)
-
-def split_frontmatter(text: str):
-    if not text.startswith("---\n"):
-        return {}, text
-    _, rest = text.split("---\n", 1)
-    frontmatter, markdown = rest.split("\n---\n", 1)
-    return yaml.safe_load(frontmatter), markdown
-
-def title_from_slug(slug: str) -> str:
-    """Compute the HTML page title from a slug."""
-
-    return slug.replace("-", " ").replace("_", " ").title()
-
-def metadata(path: Path) -> dict[str, Any]:
-    def merge_title(markdown: str, meta: Any) -> dict:
-        meta = meta if isinstance(meta, dict) else {}
-        if meta.get("title"):
-            return meta
-        for line in markdown.splitlines():
-            match = re.match(r"^[^#]*#([^#]*)$", line)
-            if match:
-                meta["title"] = match.group(1).strip()
-                return meta
-        meta["title"] = title_from_slug(path.stem)
-        return meta
-
-    if path.is_dir():
-        index_md = path / "index.md"
-        if index_md.exists():
-            loaded, markdown = split_frontmatter(index_md.read_text(encoding="utf-8"))
-            return merge_title(markdown, loaded)
-
-        meta_path = path / ".meta.yaml"
-        if not meta_path.exists():
-            return {}
-        loaded = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
-        return merge_title("", loaded)
-
-    if path.is_file() and path.suffix.lower() == ".md":
-        loaded, markdown = split_frontmatter(path.read_text(encoding="utf-8"))
-        return merge_title(markdown, loaded)
-
-    return {"title": path.name}
-
-def styledown(text: str, filename: Optional[str] = None) -> str:
-    _, text = split_frontmatter(text)
-    text = preprocess_div_blocks(text)
-    return mistletoe.markdown(text, renderer=lambda: PygmentsHtmlRenderer(filename=filename))
+def get_css() -> str:
+    styledown_css = (Path(__file__).parent / "styles.css").read_text(encoding="utf-8")
+    return styledown_css + "\n" + HtmlFormatter().get_style_defs(".highlight")

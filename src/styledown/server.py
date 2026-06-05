@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, Response
+
+from .styledown import get_css
 
 def _path_within_root(root: Path, path: Path) -> bool:
     try:
@@ -54,8 +56,12 @@ def create_app(root: Path, domains: bool = False) -> FastAPI:
     root = root.resolve()
     app = FastAPI()
 
+    @app.get("/styles.css")
+    async def get_styles() -> Response:
+        return Response(get_css(), media_type="text/css")
+
     @app.get("/{url_path:path}")
-    async def get_page(url_path: str, request: Request):
+    async def get_page(url_path: str, request: Request) -> Response:
         request_root = root
         if domains:
             host = _sanitize_host(request.headers.get("host", ""))
@@ -75,6 +81,9 @@ def create_app(root: Path, domains: bool = False) -> FastAPI:
 
         if requested.is_file():
             return FileResponse(requested)
+
+        if requested.is_dir() and not request.url.path.endswith("/"):
+            return RedirectResponse(url=f"{request.url.path}/", status_code=307)
 
         if (
             requested_rel.as_posix() not in ("", ".")
@@ -96,6 +105,5 @@ def create_app(root: Path, domains: bool = False) -> FastAPI:
 
 def run_server(root: Path, host: str, port: int, domains: bool = False) -> None:
     import uvicorn
-
     app = create_app(root, domains=domains)
     uvicorn.run(app, host=host, port=port)

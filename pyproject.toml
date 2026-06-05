@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "styledown"
-version = "0.1.0"
+version = "0.2.0"
 description = "A tiny Markdown renderer"
 requires-python = ">=3.9"
 dependencies = ["mistletoe", "pygments", "fastapi", "uvicorn", "pyyaml"]
@@ -16,7 +16,7 @@ styledown = "styledown:main"
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-styledown = ["styles.css"]
+styledown = ["styles.css", "template.html"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
